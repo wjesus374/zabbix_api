@@ -1,0 +1,7 @@
+[
+{
+	"zbx_url" : "https://zabbix.teste.local",
+	"zbx_username" : "USUARIO",
+	"zbx_password" : "SENHA"
+}
+]
