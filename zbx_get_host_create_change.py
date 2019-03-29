@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 # -*- encoding: utf-8 -*-
-
 from pyzabbix import ZabbixAPI
 import json
 import pprint
@@ -11,8 +10,8 @@ pp = pprint.PrettyPrinter(indent=4)
 #Listas com parametros de substituição
 status_info = {'0':'Ativo','1':'Desativado'}
 interfaces_type = {'1': 'Agente', '2': 'SNMP', '3': 'IPMI', '4': 'JMX'}
-hostgroups_sub = {'TesteOLD':'TesteNEW'}
-templates_sub = {'TesteOLD':'TesteNEW'}
+hostgroups_sub = {'GRUPOA':'GRUPOB','GRUPOC':'GRUPOD'}
+templates_sub = {'TEMPLATEA':'TEMPLATEB', 'TEMPLATEC': 'TEMPLATED'}
 
 #Lista com resposta sim
 resp_sim = {'s','sim', 'Sim', 'S'}
@@ -158,6 +157,51 @@ def gettemplateid(zapi,templatesname,host):
 
 	#print(temid)
 	return(temid)
+
+def gettriggers(zapi):
+    zapi = zapi
+
+    triggers = zapi.trigger.get(output="extend")
+    print(triggers)
+
+def getactivetriggers(zapi):
+    zapi = zapi
+    #triggers = zapi.trigger.get(filter={"status":1},output=["triggerid","description","priority"],sortfield="priority",sortorder="DESC")
+
+    triggers = zapi.trigger.get(filter={"value": 1},output=["triggerid","description","priority","status"])
+
+
+    for tr in triggers:
+        #if tr['status'] == '1':
+        print(tr)
+        print('--------------------')
+
+
+def gethostidbyname(zapi,hostname):
+    zapi = zapi
+    hostname = hostname
+
+    host = zapi.host.get(filter={"host":hostname},output="extend")
+    #print(host)
+    return host
+
+def getproblems(zapi):
+    zapi = zapi
+
+    hostinfo = gethostidbyname(zapi,'LYRA_NOTIFY')
+    hostid = hostinfo[0]['hostid']
+    problems = zapi.problem.get(output="extend",sortfield=["clock", "eventid"],sortorder="DESC")
+    pp.pprint(problems)
+
+def getevents(zapi):
+    zapi = zapi
+
+    #events = zapi.event.get(output="extend", acknowledged="true", select_acknowledges="extend", sortfield=["clock", "eventid"])
+
+    hostinfo = gethostidbyname(zapi,'LYRA_NOTIFY')
+    hostid = hostinfo[0]['hostid']
+    events = zapi.event.get(output="extend", select_acknowledges="extend", sortfield=["clock", "eventid"], sortorder="DESC", hostids=hostid)
+    pp.pprint(events)
 
 def gethostgroupsid(zapi,hostgroupsname):
 	zapi = zapi
@@ -312,15 +356,69 @@ def changehost(hosts):
                     print(interfaces)
                     print('Interface modificada!')
 
+def migrateitens(zapi,nzapi,hostinfo,nhostinfo):
+    try:
+        name = hostinfo[0]['name']
+        hostid = hostinfo[0]['hostid']
+
+        nhostid = nhostinfo[0]['hostid']
+
+        for item in zapi.item.get(hostids=hostid, output="extend"):
+            stat = {}
+            for key,value in item.items():
+                if key == 'name':
+                    #data[key] = str(value)
+                    stat[key] = value
+                if key == 'key_':
+                    stat[key] = value
+                if key == 'type':
+                    stat[key] = value
+                if key == 'value_type':
+                    stat[key] = value
+                if key == 'params':
+                    stat[key] = value
+                if key == 'delay':
+                    stat[key] = value
+
+            sitem = nzapi.item.get(hostid=nhostid, output="extend", search={'key_':stat['key_']})
+            if sitem[0]['key_'] == stat['key_']:
+                print("Item não foi criado, pois já existe uma chave: [%s]" %(stat['key_']))
+            else:
+                nzapi.item.create(name=stat['name'], key_=stat['key_'], hostid=nhostid, type=stat['type'], value_type=stat['value_type'], params=stat['params'], delay=stat['delay'])
+                print("Item criado: Nome: [%s] - Chave:[%s]" %(stat['name'],stat['key_']))
+    except Exception as e:
+        print("Erro: [%s]" %e)
 
 if __name__ == "__main__":
-	#zapi = loadconfig('config.json','ssl','log')
-	#zapi = loadconfig('newzbx.json','nossl','')
-	#hosts = gethosts(zapi)
-	#Confirmar e modificar o host
-	#Carregar os hosts de um arquivo JSON
-	with open('zbx_data.json', 'r') as jsonfile:
-		hosts = json.load(jsonfile)
-	#Modificar os hosts
-	changehost(hosts)
+    #loadconfig('config.json','ssl')
+    #zapi = loadconfig('config.json','ssl','log')
+    #zapi = loadconfig('config.json','nossl','')
+    #zapi = loadconfig('newzbx.json','nossl','')
+    #hosts = gethosts(zapi)
+    #Confirmar e modificar o host
+    #Carregar os hosts de um arquivo JSON
+    #with open('zbx_data.json', 'r') as jsonfile:
+    #    hosts = json.load(jsonfile)
+    #Modificar os hosts
+    #changehost(hosts)
+    #zapi = loadconfig('newzbx.json','nossl','')
+    #Modificar somente um host
+    #host = {}
+    #host['CLIENTE - CABAL'] = hosts['CLIENTE - CABAL']
+    #changehost(host)
+    #Coletar os itens do host
+    zapi = loadconfig('config.json','nossl','')
+    nzapi = loadconfig('newzbx.json','nossl','')
+    #Host antigo do Zabbix (não é o nome visivel)
+    hostinfo = gethostidbyname(zapi,'CLIENTE')
+    #Novo Zabbix (não é o nome visivel)
+    nhostinfo = gethostidbyname(nzapi,'CLIENTE')
 
+    #Migração de intens ('Zabbix Antigo','Zabbix Novo', 'Hostinfo antigo', 'Hostinfo novo')
+    migrateitens(zapi,nzapi,hostinfo,nhostinfo)
+
+    #print(hostinfo)
+    #gettriggers(zapi)
+    #getactivetriggers(zapi)
+    #getproblems(zapi)
+    #getevents(zapi)
